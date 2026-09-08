@@ -1,0 +1,88 @@
+name: Build Social Comments for OBS v0.4 (Windows)
+
+on:
+  workflow_dispatch:
+
+env:
+  SOCIAL_COMMENTS_GOOGLE_CLIENT_ID: ${{ vars.SOCIAL_COMMENTS_GOOGLE_CLIENT_ID }}
+  SOCIAL_COMMENTS_FACEBOOK_BROKER_URL: ${{ vars.SOCIAL_COMMENTS_FACEBOOK_BROKER_URL }}
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout Social Comments
+        uses: actions/checkout@v4
+
+      - name: Checkout official OBS plugin template
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-plugintemplate
+          path: _obs-template
+
+      - name: Inject plugin into official template
+        shell: pwsh
+        run: |
+          Remove-Item -Path _obs-template/src/* -Recurse -Force
+          Copy-Item -Path src/* -Destination _obs-template/src -Recurse -Force
+          Copy-Item -Path template/CMakeLists.txt -Destination _obs-template/CMakeLists.txt -Force
+
+          $specPath = "_obs-template/buildspec.json"
+          $spec = Get-Content -Path $specPath -Raw | ConvertFrom-Json
+          $spec.name = "obs-social-comments"
+          $spec.displayName = "Social Comments for OBS"
+          $spec.version = "0.4.0"
+          $spec.author = "Social Comments for OBS"
+          $spec.website = "https://github.com/"
+          $spec.email = "noreply@example.com"
+          $spec | ConvertTo-Json -Depth 50 | Set-Content -Path $specPath -Encoding UTF8
+
+      - name: Build with OBS official scripts
+        shell: pwsh
+        run: |
+          Set-Location _obs-template
+          .\.github\scripts\Build-Windows.ps1 -Target x64 -Configuration Release
+
+      - name: Package with OBS official scripts
+        shell: pwsh
+        run: |
+          Set-Location _obs-template
+          .\.github\scripts\Package-Windows.ps1 -Target x64 -Configuration Release
+
+      - name: Locate built plugin
+        id: dll
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Path _obs-template -Filter obs-social-comments.dll -Recurse |
+            Where-Object { $_.FullName -match 'Release|release' } |
+            Select-Object -First 1
+          if (-not $dll) { throw "obs-social-comments.dll not found after build" }
+          "path=$($dll.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "DLL: $($dll.FullName)"
+
+      - name: Install Inno Setup if needed
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          .\scripts\make-installer.ps1 -DllPath "${{ steps.dll.outputs.path }}" -Version "0.4.0"
+
+      - name: Upload OBS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-comments-obs-v0.4-windows-x64-portable
+          path: _obs-template/release/*windows-x64*.*
+          if-no-files-found: error
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-comments-obs-v0.4-setup-x64
+          path: release/Social-Comments-for-OBS-v0.4.0-Setup-x64.exe
+          if-no-files-found: error
