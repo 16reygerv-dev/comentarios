@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Path $PluginDir -Force | Out-Null
 Copy-Item -Path $DllPath -Destination (Join-Path $PluginDir "obs-social-comments.dll") -Force
 
 if ([string]::IsNullOrWhiteSpace($IsccPath)) {
-    $Candidates = @(
+    [array]$Candidates = @(.
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
     ) | Where-Object { $_ -and (Test-Path $_) }
